@@ -54,3 +54,7 @@ class beam_netwrok():
                 phase = L[i]
                 A[i+1, i+1] = ((torch.exp(-2*torch.pi*(r/Lam)*1j))*(torch.exp(phase*1j)))/r
         return A
+
+    def generate(self, L = None):
+        H = self.calculate_Br() @ self.calculate_A(L) @ (self.calculate_Bt().conj().T)
+        return H
