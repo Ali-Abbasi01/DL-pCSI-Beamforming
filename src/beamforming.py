@@ -45,11 +45,26 @@ class algorithm():
             return (self.SNR*s)/(self.n_T*self.num_samples)
 
     def alg(self):
-        #Allocation
-        for k in range(8):
-            diag = []
-            den = (sum([(1 - self.MMSE_bar(i)) for i in range(self.n_T)])/self.n_T)
-            for j in range(self.n_T):
-                diag.append((1 - self.MMSE_bar(j))/den)
-            torch.diagonal(self.P).copy_(torch.tensor(diag))
-        #Check
+        flag = 0
+        while True: 
+            #Allocation
+            for k in range(8):
+                diag = []
+                den = (sum([(1 - self.MMSE_bar(i)) for i in range(self.n_T)])/self.n_T)
+                for j in range(self.n_T):
+                    diag.append((1 - self.MMSE_bar(j))/den)
+                torch.diagonal(self.P).copy_(torch.tensor(diag))
+            #Check
+            rhs = sum([(1 - self.MMSE_bar(i)) for i in range(self.n_T)])/self.n_T
+            for i in range(self.n_T):
+                if abs(self.P[i, i]) <= 0.001 * self.n_T:
+                    if self.Eq12(i) > rhs:
+                        l = [self.Eq12(k) for k in range(self.n_T)]
+                        idx = l.index(min(l))
+                        self.P[idx, idx] = 0
+                        flag = 1
+                        break  
+            if flag == 0: break
+        print("The optimal beamforming matrix is:\n", self.V)
+        print("\n\n")
+        print("The optimal power allocation is:\n", self.P)                     
