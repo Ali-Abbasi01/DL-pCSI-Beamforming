@@ -1,20 +1,21 @@
 #Algorithm
 class algorithm():
 
-    def __init__(self, num_samples=10000):
-        self.n_T = 3
-        self.n_R = 2
+    def __init__(self, num_samples=10000, chan_gen, SNR):
+        self.chan_gen = chan_gen
+        self.n_R, self.n_T = chan_gen.generate().shape
         self.num_samples = num_samples
-        H_bar = np.ones((2, 3))
-        U, S, VT = np.linalg.svd(H_bar.T@H_bar)
-        self.V = U
-        self.P = np.identity(3)
-        self.SNR = 3.16
+        self.H_bar = chan_gen.H_bar
+        if torch.all(self.H_bar == 0):
+            self.V = chan_gen.U_T
+        else:
+            U, S, VT = torch.linalg.svd(self.H_bar.T@self.H_bar)
+            self.V = U
+        self.P = torch.eye(self.n_T)
+        self.SNR = SNR
 
     def H_gen(self):
-        H_bar = np.ones((2, 3))
-        H_tilda = np.random.normal(0, 1, size=(2, 3))
-        self.H = (1/np.sqrt(2))*(H_bar + H_tilda)
+        self.H = self.chan_gen.generate()
         return self.H
 
     def H_hat(self): return self.H @ self.V
@@ -22,11 +23,12 @@ class algorithm():
     def h_hat(self, j): return self.H_hat()[:, j].reshape(-1, 1)
 
     def B(self, j):
-        H_j_hat = np.delete(self.H_hat(), j, axis=1)
-        P_j = np.delete(np.delete(self.P, j, axis=0), j, axis=1)
-        return np.linalg.inv(np.identity(self.n_R) + (self.SNR / self.n_T) * (H_j_hat @ P_j @ H_j_hat.conj().T))
+        H_j_hat = torch.cat((self.H[:, :j], self.H[:, j+1:]), dim=1)
+        P_new = torch.cat((self.P[:j, :], self.P[j+1:, :]), dim=0)  # Remove j-th row
+        P_j = torch.cat((P_new[:, :j], P_new[:, j+1:]), dim=1)
+        return torch.linalg.inv(torch.eye(self.n_R) + (self.SNR / self.n_T) * (H_j_hat @ P_j @ H_j_hat.T))
     
-    def MMSE(self, j): return np.real((1/(1 + self.P[j, j]*(self.SNR/self.n_T)*((self.h_hat(j).conj().T)@self.B(j)@self.h_hat(j))))[0, 0])
+    def MMSE(self, j): return 1/(1 + self.P[j, j]*(self.SNR/self.n_T)*((self.h_hat(j).T)@self.B(j)@self.h_hat(j)))
 
     def MMSE_bar(self, j):
         s = 0
@@ -51,8 +53,8 @@ class algorithm():
         s = 0
         for i in range(self.num_samples):
             self.H_gen()
-            s += (self.h_hat(j).conj().T)@self.B(j)@self.h_hat(j)
-            return np.real(((self.SNR*s)/(self.n_T*self.num_samples))[0, 0])
+            s += (self.h_hat(j).T)@self.B(j)@self.h_hat(j)
+            return (self.SNR*s)/(self.n_T*self.num_samples)
 
     
     def alg(self):
