@@ -42,7 +42,7 @@ class algorithm():
         for i in range(self.num_samples):
             self.H_gen()
             s += (self.h_hat(j).T)@self.B(j)@self.h_hat(j)
-            return (self.SNR*s)/(self.n_T*self.num_samples)
+        return (self.SNR*s)/(self.n_T*self.num_samples)
 
     def alg(self):
         flag = 0
