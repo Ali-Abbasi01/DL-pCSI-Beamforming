@@ -69,28 +69,34 @@ class UIU_algorithm():
         print("\n\n")
         print("The optimal power allocation is:\n", self.P) 
 
-def wf_algorithm(H, pt): 
-  U, S, V = torch.svd(H)
-  delta = 1/(S**2)
-  S = torch.cat((S, torch.zeros(V.shape[0] - S.shape[0], dtype=S.dtype)), dim=0)
-  def f(wl):
-    s = 0
-    for i in delta:
-      s+=max(0, wl-i)
-    return s
-  wll = torch.arange(torch.min(delta), pt+torch.max(delta)+1, 0.01)
-  p = torch.tensor([f(i) for i in wll])
-  wl_star = wll[torch.argmin(torch.abs(p - pt))]
-  diags = torch.zeros(S.shape[0], dtype=torch.complex64)
-  for i in range(S.shape[0]):
-    if S[i]==0:
-      diags[i] = 0
-    else:
-      diags[i] = max(0, wl_star-(1/(S[i]**2)))
-  # diags = [max(0, wl_star-delta[0]), max(0, wl_star-delta[1]),max(0, wl_star-delta[2]),0,0]
-  D = torch.diag(diags)
-  Sigma = (V.conj().T)@D@V
-  print("The optimal beamforming matrix is:\n", V.conj().T)
-  print("The optimal power allocation is:\n", D)
-  return Sigma                   
+class wf_algorithm(): 
+
+    def __init__(self, H, Pt):
+        self.H = H
+        self.Pt = Pt
+        self.U, self.S, self.V = torch.svd(self.H)
+
+    def bf_matrix(self):
+        return self.V.conj().T
+
+    def p_allocation(self):
+        delta = 1/(self.S**2)
+        self.S = torch.cat((self.S, torch.zeros(self.V.shape[0] - self.S.shape[0], dtype=S.dtype)), dim=0)
+        def f(wl):
+            s = 0
+            for i in delta:
+                s += max(0, wl-i)
+            return s
+        wll = torch.arange(torch.min(delta), self.Pt+torch.max(delta)+1, 0.01)
+        p = torch.tensor([f(i) for i in wll])
+        wl_star = wll[torch.argmin(torch.abs(p - self.Pt))]
+        diags = torch.zeros(self.S.shape[0], dtype=torch.complex64)
+        for i in range(self.S.shape[0]):
+            if self.S[i]==0:
+                diags[i] = 0
+            else:
+                diags[i] = max(0, wl_star-(1/(self.S[i]**2)))
+        # diags = [max(0, wl_star-delta[0]), max(0, wl_star-delta[1]),max(0, wl_star-delta[2]),0,0]
+        D = torch.diag(diags)
+        return D                 
               
