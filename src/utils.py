@@ -1,3 +1,5 @@
+import torch
+
 def calculate_rate(H, sigma):
     n_r = H.shape[0]
     I = torch.eye(n_r, dtype=H.dtype)

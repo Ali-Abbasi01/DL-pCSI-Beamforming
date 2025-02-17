@@ -1,4 +1,6 @@
 #Algorithm
+import torch
+
 class UIU_algorithm():
 
     def __init__(self, chan_gen, SNR, num_samples=10000):

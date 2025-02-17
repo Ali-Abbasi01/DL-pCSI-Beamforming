@@ -1,10 +1,20 @@
 import os
+import sys
 import json
 import torch
 import pandas as pd
+import importlib
+# Get the current working directory
+scripts_dir = os.getcwd()
+# Go up two levels
+project_root = os.path.abspath(os.path.join(scripts_dir, '..', '..'))
+sys.path.append(project_root)
 
-# Adjust these imports to match your actual module paths
+import src.beamforming
+importlib.reload(src.beamforming)
 from src.beamforming import wf_algorithm
+import src.utils
+importlib.reload(src.utils)
 from src.utils import calculate_rate
 
 def generate_random_mimo_channels(num_samples, n_rx, n_tx, dtype=torch.complex64):
@@ -19,68 +29,50 @@ def generate_random_mimo_channels(num_samples, n_rx, n_tx, dtype=torch.complex64
     channels = torch.complex(real_part, imag_part).to(dtype)
     return channels
 
-def main():
-    # -----------------------------
-    # Hyperparameters
-    # -----------------------------
-    num_samples = 1000  # Number of random channels
-    n_rx = 4            # Number of receive antennas
-    n_tx = 4            # Number of transmit antennas
+def main(num_samples, n_T, n_R, Pt):
 
-    # -----------------------------
-    # 1. Generate random channels
-    # -----------------------------
+    num_samples = num_samples
+    n_rx = n_R 
+    n_tx = n_T
+    Pt = Pt
+
     channels = generate_random_mimo_channels(num_samples, n_rx, n_tx)
 
-    # Prepare a list of data records (one record per channel)
     data_records = []
 
-    # -----------------------------
-    # 2. Compute BF matrix, power allocation, and rate for each channel
-    # -----------------------------
     for i in range(num_samples):
-        ch = channels[i]  # shape: (n_rx, n_tx), complex
+        ch = channels[i] 
 
-        # Instantiate your water-filling or beamforming object/class
-        wf = wf_algorithm(ch)  # Adjust constructor as needed
+        wf = wf_algorithm(ch, Pt) 
 
-        # 2.1: Get the beamforming matrix (bf_mat) and power allocation (p_alloc)
-        bf_mat = wf.bf_matrix()        # shape: (n_tx, ?)
-        p_alloc = wf.p_allocation()    # shape: (n_streams,) or (n_tx,)
-
-        # 2.2: Construct the transmit covariance matrix, if needed
-        #      Example: Cov = bf_mat @ diag(p_alloc) @ bf_mat^H
-        #      (Hermitian transpose in PyTorch: conj().transpose(-2, -1))
-        Cov = bf_mat @ torch.diag(p_alloc) @ bf_mat.conj().transpose(-2, -1)
-
-        # 2.3: Calculate the rate
-        rate = calculate_rate(ch, Cov)
+        bf_mat = wf.bf_matrix()
+        p_alloc = wf.p_allocation()
+        Cov = bf_mat @ p_alloc @ bf_mat.conj().T
+        rate = calculate_rate(ch, Cov).real
         # If `rate` is a torch scalar, convert to Python float
         if isinstance(rate, torch.Tensor):
             rate = rate.item()
 
-        # -----------------------------
-        # 3. Store record in a list
-        # -----------------------------
-        # Because CSV doesn't handle complex/binary data directly,
-        # we convert each tensor to a Python list and then JSON-encode it.
+
         record = {
-            "channel": json.dumps(ch.tolist()),              # (n_rx, n_tx) complex
-            "bf_matrix": json.dumps(bf_mat.tolist()),        # (n_tx, ?)
-            "power_allocation": json.dumps(p_alloc.tolist()),# (n_streams,) or (n_tx,)
-            "rate": rate
+            "channel": json.dumps({"real": ch.real.tolist(), "imag": ch.imag.tolist()}),  # Convert complex to JSON
+            "bf_matrix": json.dumps({"real": bf_mat.real.tolist(), "imag": bf_mat.imag.tolist()}), 
+            "p_allocation": json.dumps({"real": p_alloc.real.tolist(), "imag": p_alloc.imag.tolist()}),
+            "rate": rate 
         }
         data_records.append(record)
 
-    # -----------------------------
-    # 4. Convert records to a DataFrame and save to CSV
-    # -----------------------------
     df = pd.DataFrame(data_records)
 
     # Save CSV to the same directory as this script
-    output_path = os.path.join(os.path.dirname(__file__), "synthesized_data.csv")
+    output_path = os.path.join(os.getcwd(), "synthesized_data.csv")
     df.to_csv(output_path, index=False)
     print(f"Data saved to {output_path}")
 
+num_samples = 1000
+n_T = 4
+n_R = 4
+Pt = 4
+
 if __name__ == "__main__":
-    main()
+    main(num_samples, n_T, n_R, Pt)
