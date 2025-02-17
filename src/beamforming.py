@@ -77,11 +77,11 @@ class wf_algorithm():
         self.U, self.S, self.V = torch.svd(self.H)
 
     def bf_matrix(self):
-        return self.V.conj().T
+        return self.V
 
     def p_allocation(self):
         delta = 1/(self.S**2)
-        self.S = torch.cat((self.S, torch.zeros(self.V.shape[0] - self.S.shape[0], dtype=S.dtype)), dim=0)
+        # self.S = torch.cat((self.S, torch.zeros(self.V.shape[0] - self.S.shape[0], dtype=S.dtype)), dim=0)
         def f(wl):
             s = 0
             for i in delta:
@@ -92,11 +92,8 @@ class wf_algorithm():
         wl_star = wll[torch.argmin(torch.abs(p - self.Pt))]
         diags = torch.zeros(self.S.shape[0], dtype=torch.complex64)
         for i in range(self.S.shape[0]):
-            if self.S[i]==0:
-                diags[i] = 0
-            else:
-                diags[i] = max(0, wl_star-(1/(self.S[i]**2)))
+            diags[i] = max(0, wl_star-(1/(self.S[i]**2)))
         # diags = [max(0, wl_star-delta[0]), max(0, wl_star-delta[1]),max(0, wl_star-delta[2]),0,0]
         D = torch.diag(diags)
-        return D                 
+        return D               
               
