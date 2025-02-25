@@ -59,6 +59,84 @@ class fixed_channel_pga():
 
 class UIU_pga():
 
-    def __init__(self):
+    def __init__(self, chan_gen, num_samples=10000):
+        self.chan_gen = chan_gen
+        self.num_samples = num_samples
+        
+    def solve(self, PT, max_iter=10000, alpha=1e-3, tol=1e-8):
+        def project_psd_trace(S, PT):
+            """Project S onto the set {S >= 0, tr(S) <= PT}."""
+            # Make Hermitian for numerical stability
+            Ssym = 0.5 * (S + S.conj().T)
 
-    def solve(self):
+            # Eigen-decompose
+            eigvals, U = np.linalg.eigh(Ssym)
+
+            # Zero out negative eigenvalues (PSD constraint)
+            eigvals[eigvals < 0] = 0
+
+            # Scale down if trace > PT
+            tr_val = np.sum(eigvals)
+            if tr_val > PT:
+                eigvals *= (PT / tr_val)
+
+            # Reconstruct
+            return (U * eigvals) @ U.conj().T
+
+        def logdet_psd(A):
+            """Returns log2(det(A)), assuming A is PSD and well-conditioned."""
+            # np.linalg.slogdet returns (sign, log_abs_det) in natural log
+            sign, ld = np.linalg.slogdet(A)
+            if sign <= 0:
+                return -np.inf  # or handle numerically invalid matrix
+            return ld / np.log(2.0)
+
+        H_list = []
+        for _ in range(self.num_samples):
+            H_list.append(self.chan_gen.generate().numpy())
+        H_array = np.array(H_list)
+        K, m, n = H_array.shape
+        I_m = np.eye(m, dtype=complex)
+
+        # Initialize Sigma (PSD) with uniform power across n dimensions
+        Sigma = (PT / n) * np.eye(n, dtype=complex)
+
+        for it in range(max_iter):
+            # 1) Compute gradient wrt Sigma as average over all channels
+            grad = np.zeros_like(Sigma, dtype=complex)
+            
+            for k in range(K):
+                Hk = H_list[k]  # shape (m, n)
+                M_k = I_m + Hk @ Sigma @ Hk.conj().T  # shape (m, m)
+                M_k_inv = np.linalg.inv(M_k)  # (m, m)
+
+                # Derivative: d/dSigma [log det(M_k)] = H_k^H * M_k_inv * H_k
+                grad_k = Hk.conj().T @ M_k_inv @ Hk
+                grad += grad_k  # sum across channels
+
+            grad /= K  # average the gradient
+
+            # 2) Gradient ascent step
+            Sigma_new = Sigma + alpha * grad
+
+            # 3) Project back onto {Sigma >= 0, trace(Sigma) <= P_T}
+            Sigma_proj = project_psd_trace(Sigma_new, PT)
+
+            # 4) Check convergence
+            diff_norm = np.linalg.norm(Sigma_proj - Sigma, 'fro')
+            if diff_norm < tol:
+                Sigma = Sigma_proj
+                break
+
+            Sigma = Sigma_proj
+
+        # Compute final approximate objective value
+        # i.e. the average of log2(det(...)) across channels
+        avg_logdet = 0.0
+        for k in range(K):
+            Hk = H_list[k]
+            Mk = I_m + Hk @ Sigma @ Hk.conj().T
+            avg_logdet += logdet_psd(Mk)
+        avg_logdet /= K  # average in bits
+
+        return Sigma, avg_logdet
