@@ -1,71 +1,73 @@
-class SigmaNetwork(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(SigmaNetwork, self).__init__()
-        self.hidden = nn.Linear(input_size, hidden_size)
-        self.output = nn.Linear(hidden_size, output_size)
+# notebooks/modeling/train_sigma_predictor.ipynb
+
+import sys
+sys.path.append('../../src')  # so we can import from src/ easily
+
+import numpy as np
+import torch
+import torch.optim as optim
+from data_processing import load_channel_sigma_data, train_test_split
+from neural_networks import SigmaPredictor
+
+# 1) Load data
+file_path = '../../data/processed/channel_sigma.npz'
+H, Sigma_opt = load_channel_sigma_data(file_path)  # shapes (N, m, n), (N, n, n)
+
+# Flatten the channel for a simple approach
+N, m, n = H.shape
+H_flat = H.reshape(N, -1).real  # ignoring imaginary part for demonstration
+
+# Convert to torch tensors
+H_tensor = torch.from_numpy(H_flat).float()
+Sigma_tensor = torch.from_numpy(Sigma_opt.real).float()  # ignoring imaginary
+
+# 2) Split train/test
+split_ratio = 0.2
+idx_split = int(N*(1.0 - split_ratio))
+H_train, H_test = H_tensor[:idx_split], H_tensor[idx_split:]
+Sigma_train, Sigma_test = Sigma_tensor[:idx_split], Sigma_tensor[idx_split:]
+
+# 3) Create DataLoaders
+train_ds = torch.utils.data.TensorDataset(H_train, Sigma_train)
+test_ds = torch.utils.data.TensorDataset(H_test, Sigma_test)
+
+batch_size = 32
+train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True)
+test_loader = torch.utils.data.DataLoader(test_ds, batch_size=batch_size, shuffle=False)
+
+# 4) Define model, optimizer
+model = SigmaPredictor(m, n, hidden_dim=128)
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+# 5) Training loop
+epochs = 20
+for epoch in range(epochs):
+    model.train()
+    total_loss = 0
+    for batch_H, batch_Sigma in train_loader:
+        # Forward pass
+        Sigma_pred = model(batch_H)
+        # MSE between predicted Sigma and ground truth
+        loss = torch.mean((Sigma_pred - batch_Sigma)**2)
+        
+        # Backprop
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        total_loss += loss.item() * len(batch_H)
     
-    def forward(self, x):
-        x = torch.relu(self.hidden(x))
-        y = self.output(x)
-        return y
+    avg_loss = total_loss / len(train_loader.dataset)
+    print(f"Epoch {epoch+1}, Loss: {avg_loss:.4f}")
 
-def compute_expectation(Sigma, num_samples=10000):
-    expectation = 0
-    for i in range(num_samples):
-        H_bar = torch.ones((2, 3))
-        H_tilda = torch.randn((2, 3))
-        H = (1 / torch.sqrt(torch.tensor(2.0))) * (H_bar + H_tilda)
-        det_term = torch.det(torch.eye(2) + (5/3)*torch.matmul(H, torch.matmul(Sigma, H.T)))
-        expectation += torch.log(det_term)
-        # print(H)
-        # print(torch.log(det_term))
-        # print('\n')
-    return expectation / num_samples
+# 6) Simple test set evaluation
+model.eval()
+with torch.no_grad():
+    test_loss = 0
+    for batch_H, batch_Sigma in test_loader:
+        Sigma_pred = model(batch_H)
+        loss = torch.mean((Sigma_pred - batch_Sigma)**2)
+        test_loss += loss.item() * len(batch_H)
 
-def loss_function(y, p, num_samples=1000):
-    Sigma = torch.matmul(y, y.T)
-    neg_expectation = -compute_expectation(Sigma, num_samples)
-    # trace_penalty = torch.maximum(torch.tensor(0.0), torch.trace(Sigma) - p)
-    trace_penalty = (torch.trace(Sigma) - p)**2
-    loss = neg_expectation + 10000*trace_penalty
-    return loss
-
-# Training setup
-input_size = 6  # B_R (4x2), B_T (4x2), A1, rho2 (the amplitude of the second diagonal entry in A)
-hidden_size = 90  # Number of hidden units
-output_size = 9  # The output size is 2 for the real and imaginary parts of Sigma
-learning_rate = 0.001
-
-# Initialize the neural network model
-model = SigmaNetwork(input_size, hidden_size, output_size)
-
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-# Example data (input values for B_R, B_T, A1, rho2, and initial Sigma)
-# y = torch.eye(3)
-y = y_init
-inp = torch.ones((2, 3))
-
-num_epochs = 10000
-p = 3.0 
-
-for epoch in range(num_epochs):
-    optimizer.zero_grad()
-    
-    inp = inp.flatten()
-    
-    y = model(inp)
-    y = y.reshape(3, 3)
-
-    # Compute the loss
-    loss = loss_function(y, p)
-    
-    # Backward pass: compute gradients
-    loss.backward()
-    
-    # Update the model parameters
-    optimizer.step()
-    
-    # Print the loss every 100 epochs
-    if epoch % 100 == 0:
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+    test_loss /= len(test_loader.dataset)
+    print("Test MSE:", test_loss)
