@@ -56,6 +56,7 @@ def parse_complex_matrix(str_rep: str) -> np.ndarray:
     return np.array(arr, dtype=np.complex128)
 
 def load_dataset(csv_path: str):
+
     """
     Loads the dataset from CSV, returning:
       H_list: list of channel matrices (complex) 
@@ -64,24 +65,25 @@ def load_dataset(csv_path: str):
     """
     df = pd.read_csv(csv_path)
 
+    df["channel"] = df["channel"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
+                                                  1j * torch.tensor(json.loads(x)["imag"]))
+    
+    df["bf_matrix"] = df["bf_matrix"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
+                                                          1j * torch.tensor(json.loads(x)["imag"]))
+
+    df["p_allocation"] = df["p_allocation"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
+                                                                        1j * torch.tensor(json.loads(x)["imag"]))
+
+    df["rate"] = df["rate"].astype(float)
+
     H_list = []
     Sigma_list = []
 
     for idx, row in df.iterrows():
-        # Parse channel matrix H
-        H = parse_complex_matrix(row[df.columns[0]])
-        
-        # Parse beamforming matrix V
-        V = parse_complex_matrix(row[df.columns[1]])
-        
-        # Parse power allocation P (assume it's diagonal or shaped to be used with V)
-        P = parse_complex_matrix(row[df.columns[2]])
-        
-        # Construct Sigma = V P V^H
-        # e.g., if P is diagonal shape (n, n) or a vector of length n
-        # Make sure the multiplication shapes are consistent
-        Sigma = V @ P @ V.conj().T
-        
+        H = row[df.columns[0]]
+        V = row[df.columns[1]]
+        P = row[df.columns[2]]
+        Sigma = V @ P @ V.conj().T        
         H_list.append(H)
         Sigma_list.append(Sigma)
 
