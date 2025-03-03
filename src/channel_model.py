@@ -1,3 +1,5 @@
+import torch
+
 class beam_netwrok():
 
     def __init__(self, num_RX_ant, num_TX_ant, num_scatterers, lam, Ant_dist, TX_loc, RX_loc, SC_locs, rand_ph):
