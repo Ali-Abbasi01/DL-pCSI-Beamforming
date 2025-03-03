@@ -31,7 +31,7 @@ from typing import Tuple
 # HYPERPARAMETERS / CONFIG #
 #############################
 # You can adjust these before running:
-CSV_PATH = "project_root/data/synthesis/synthesized_data.csv"
+CSV_PATH = "../data/synthesis/synthesized_data_fixed.csv"
 VALIDATION_SPLIT = 0.2
 BATCH_SIZE = 32
 LEARNING_RATE = 1e-3
