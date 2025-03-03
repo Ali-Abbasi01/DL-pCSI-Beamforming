@@ -69,7 +69,7 @@ class UIU():
         self.G = G
 
     def generate(self):
-        n_R, n_T = H_bar.shape
+        n_R, n_T = self.H_bar.shape
         H_tilda = torch.randn(n_R, n_T)
         H = self.H_bar + self.U_R @ (H_tilda * torch.square(self.G)) @ (self.U_T.conj().T)
         return H
