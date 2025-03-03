@@ -47,8 +47,8 @@ class UIU_algorithm():
         return (self.SNR*s)/(self.n_T*self.num_samples)
 
     def alg(self):
-        flag = 0
         while True: 
+            flag = 0
             #Allocation
             for k in range(8):
                 diag = []
