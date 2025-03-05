@@ -67,9 +67,7 @@ class UIU_algorithm():
                         flag = 1
                         break  
             if flag == 0: break
-        print("The optimal beamforming matrix is:\n", self.V)
-        print("\n\n")
-        print("The optimal power allocation is:\n", self.P) 
+        return self.V, self.P
 
 class wf_algorithm(): 
 
