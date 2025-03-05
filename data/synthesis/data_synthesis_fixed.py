@@ -65,7 +65,7 @@ def main(num_samples, n_T, n_R, Pt):
     df = pd.DataFrame(data_records)
 
     # Save CSV to the same directory as this script
-    output_path = os.path.join(os.getcwd(), "synthesized_data.csv")
+    output_path = os.path.join(os.getcwd(), "synthesized_data_fixed.csv")
     df.to_csv(output_path, index=False)
     print(f"Data saved to {output_path}")
 
@@ -76,3 +76,4 @@ Pt = 4
 
 if __name__ == "__main__":
     main(num_samples, n_T, n_R, Pt)
+ 
