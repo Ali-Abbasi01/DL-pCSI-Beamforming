@@ -1,23 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-train_sigma_model.py
-
-Trains a neural network to predict the optimal Sigma = V P V^H 
-given a channel matrix H, where:
-  - first column of CSV: channel matrix H
-  - second column of CSV: beamforming matrix V
-  - third column of CSV: power allocation P
-
-The final script:
-  - Loads the data from: project_root/data/synthesis/synthesized_data.csv
-  - Splits into train/validation sets
-  - Builds a PyTorch model
-  - Trains the model to predict Sigma
-  - Evaluates performance on train and validation sets
-  - Saves plots of train vs. validation performance
-"""
-
 import os
 import pandas as pd
 import numpy as np
@@ -31,7 +13,7 @@ from typing import Tuple
 # HYPERPARAMETERS / CONFIG #
 #############################
 # You can adjust these before running:
-CSV_PATH = "project_root/data/synthesis/synthesized_data.csv"
+CSV_PATH = "../data/synthesis/synthesized_data_UIU.csv"
 VALIDATION_SPLIT = 0.2
 BATCH_SIZE = 32
 LEARNING_RATE = 1e-3
@@ -65,16 +47,17 @@ def load_dataset(csv_path: str):
     """
     df = pd.read_csv(csv_path)
 
-    df["channel"] = df["channel"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
-                                                  1j * torch.tensor(json.loads(x)["imag"]))
-    
-    df["bf_matrix"] = df["bf_matrix"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
-                                                          1j * torch.tensor(json.loads(x)["imag"]))
+    df["U_R"] = df["U_R"].apply(lambda x: torch.tensor(json.loads(x)))
 
-    df["p_allocation"] = df["p_allocation"].apply(lambda x: torch.tensor(json.loads(x)["real"]) + 
-                                                                        1j * torch.tensor(json.loads(x)["imag"]))
+    df["U_T"] = df["U_T"].apply(lambda x: torch.tensor(json.loads(x)))
 
-    df["rate"] = df["rate"].astype(float)
+    df["H_bar"] = df["H_bar"].apply(lambda x: torch.tensor(json.loads(x)))
+
+    df ["G"] = df["G"].apply(lambda x: torch.tensor(json.loads(x)))
+
+    df["V"] = df["V"].apply(lambda x: torch.tensor(json.loads(x)))
+
+    df["P"] = df["P"].apply(lambda x: torch.tensor(json.loads(x)))
 
     H_list = []
     Sigma_list = []
