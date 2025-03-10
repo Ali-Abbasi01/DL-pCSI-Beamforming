@@ -8,11 +8,11 @@ import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
 from typing import Tuple
+import json
 
 #############################
 # HYPERPARAMETERS / CONFIG #
 #############################
-# You can adjust these before running:
 CSV_PATH = "../data/synthesis/synthesized_data_UIU.csv"
 VALIDATION_SPLIT = 0.2
 BATCH_SIZE = 32
@@ -25,28 +25,37 @@ SAVE_FIG_PATH = "loss_plot.png"  # Where to save the train/val plot
 #####################
 # DATA LOADING LOGIC
 #####################
-def parse_complex_matrix(str_rep: str) -> np.ndarray:
+def parse_matrix(str_rep: str) -> np.ndarray:
     """
-    Example parser that assumes the matrix is stored as a string
-    like '[[1+2j, 3+4j], [5+6j, 7+8j]]'.
-    You need to adapt this if your CSV uses a different format!
+    Example parser that assumes the matrix is stored in JSON with 'real' as a 2D list
+    or stored as a Python literal like [[1.0, 2.0], [3.0, 4.0]].
+    Adjust if your CSV uses a different format!
     """
-    # A simple approach: use Python's eval after replacing 'j' with 'j '
-    # or do safer parsing with regex. Here we do a minimal approach:
-    # WARNING: using eval can be unsafe if strings are not trusted.
-    arr = eval(str_rep)
-    return np.array(arr, dtype=np.complex128)
+    # Minimal approach: try JSON, if it fails, try eval
+    try:
+        data = json.loads(str_rep)
+        # If your CSV is purely real, you might just do: return np.array(data)
+        # but here we handle a possible key 'real' if it exists:
+        if isinstance(data, dict) and "real" in data:
+            return np.array(data["real"], dtype=np.float32)
+        else:
+            return np.array(data, dtype=np.float32)
+    except:
+        # Fallback if not valid JSON: use eval to parse Python literal
+        # WARNING: using eval can be unsafe if strings are not trusted.
+        return np.array(eval(str_rep), dtype=np.float32)
 
 def load_dataset(csv_path: str):
-
     """
     Loads the dataset from CSV, returning:
-      H_list: list of channel matrices (complex) 
-      Sigma_list: list of covariance (target) matrices (complex)
-    We'll compute Sigma = V * P * V^H from the second and third columns.
+      H_list: list of channel matrices (real)
+      Sigma_list: list of covariance (target) matrices (real)
+    We'll compute Sigma = V @ P @ V.T from the second and third columns.
     """
     df = pd.read_csv(csv_path)
 
+    # Adapt these column names to match your CSV structure
+    # Here we assume columns named "channel", "bf_matrix", and "p_allocation"
     df["U_R"] = df["U_R"].apply(lambda x: torch.tensor(json.loads(x)))
 
     df["U_T"] = df["U_T"].apply(lambda x: torch.tensor(json.loads(x)))
@@ -62,16 +71,18 @@ def load_dataset(csv_path: str):
     H_list = []
     Sigma_list = []
 
+    # Compute Sigma from V, P for each row
     for idx, row in df.iterrows():
-        H = row[df.columns[0]]
-        V = row[df.columns[1]]
-        P = row[df.columns[2]]
-        Sigma = V @ P @ V.conj().T        
+        H = row["channel"]      # shape: (m, n)
+        V = row["V"]    # shape: (n, n) or similar
+        P = row["P"] # shape: (n, n) or vector (n,) etc.
+        # If P is diagonal, you might need e.g. np.diag(P) here:
+        # P = np.diag(P) if it's stored as just the diagonal
+        Sigma = V @ P @ V.T
         H_list.append(H)
         Sigma_list.append(Sigma)
 
     return H_list, Sigma_list
-
 
 def train_val_split(H_list, Sigma_list, val_ratio=VALIDATION_SPLIT, seed=SEED):
     """
@@ -86,7 +97,6 @@ def train_val_split(H_list, Sigma_list, val_ratio=VALIDATION_SPLIT, seed=SEED):
     train_idx = indices[:split_idx]
     val_idx = indices[split_idx:]
 
-    # reorder arrays
     H_train = [H_list[i] for i in train_idx]
     Sigma_train = [Sigma_list[i] for i in train_idx]
     H_val = [H_list[i] for i in val_idx]
@@ -94,54 +104,26 @@ def train_val_split(H_list, Sigma_list, val_ratio=VALIDATION_SPLIT, seed=SEED):
 
     return H_train, Sigma_train, H_val, Sigma_val
 
-def complex_to_real_channels(H: np.ndarray) -> np.ndarray:
+def flatten_matrix(mat: np.ndarray) -> np.ndarray:
     """
-    Convert a complex matrix H (shape m x n) to a real array (2*m x n) 
-    or (m x 2*n), or simply flatten. We'll go with flattening:
-       real part, imag part side by side 
-    shape becomes (m*n*2,)
+    Flatten a real-valued 2D matrix to 1D array.
     """
-    m, n = H.shape
-    H_real = np.real(H).flatten()
-    H_imag = np.imag(H).flatten()
-    return np.concatenate([H_real, H_imag], axis=0)
-
-def complex_to_real_sigma(Sigma: np.ndarray) -> np.ndarray:
-    """
-    Convert a complex matrix Sigma (shape n x n) to real shape (2*n, n) or flatten.
-    We'll similarly flatten with real/imag parts concatenated.
-    shape becomes (n*n*2,)
-    """
-    n, _ = Sigma.shape
-    S_real = np.real(Sigma).flatten()
-    S_imag = np.imag(Sigma).flatten()
-    return np.concatenate([S_real, S_imag], axis=0)
-
-def real_to_complex_sigma(vec: np.ndarray, n: int) -> np.ndarray:
-    """
-    Convert a flattened real+imag vector back to a complex matrix of shape (n x n).
-    We assume the first half is real, second half is imag.
-    """
-    half = len(vec)//2
-    real_part = vec[:half].reshape(n, n)
-    imag_part = vec[half:].reshape(n, n)
-    return real_part + 1j * imag_part
-
+    return mat.flatten()
 
 class SigmaDataset(torch.utils.data.Dataset):
     """
     PyTorch dataset for H -> Sigma mapping.
-    Each item is (H_in, Sigma_label).
-    Where H_in is real+imag flattened, Sigma_label is real+imag flattened.
+    Each item is (H_in, Sigma_label), where both are flattened real vectors.
     """
     def __init__(self, H_list, Sigma_list):
         self.X = []
         self.y = []
         for H, Sigma in zip(H_list, Sigma_list):
-            x = complex_to_real_channels(H)
-            t = complex_to_real_sigma(Sigma)
+            x = flatten_matrix(H)
+            t = flatten_matrix(Sigma)
             self.X.append(x)
             self.y.append(t)
+
         self.X = np.array(self.X, dtype=np.float32)
         self.y = np.array(self.y, dtype=np.float32)
 
@@ -158,8 +140,8 @@ class SigmaDataset(torch.utils.data.Dataset):
 ##################
 class SigmaPredictor(nn.Module):
     """
-    A simple feedforward network that maps a flattened real+imag channel vector
-    to a flattened real+imag Sigma vector.
+    A simple feedforward network that maps a flattened real channel vector
+    to a flattened real Sigma vector.
     """
     def __init__(self, input_dim, output_dim, hidden_dim=HIDDEN_DIM):
         super(SigmaPredictor, self).__init__()
@@ -168,21 +150,15 @@ class SigmaPredictor(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
-        # x shape: (batch_size, input_dim)
         h = torch.relu(self.fc1(x))
         h = torch.relu(self.fc2(h))
         out = self.fc3(h)
         return out
 
-
 #########################
 # TRAINING & EVAL LOGIC
 #########################
 def train_model(model, train_loader, val_loader, epochs=EPOCHS, lr=LEARNING_RATE):
-    """
-    Train the model using MSE loss between predicted Sigma and ground truth Sigma.
-    Returns the training and validation losses per epoch.
-    """
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
@@ -213,7 +189,6 @@ def train_model(model, train_loader, val_loader, epochs=EPOCHS, lr=LEARNING_RATE
             for X_batch, y_batch in val_loader:
                 X_batch = X_batch.to(model.device)
                 y_batch = y_batch.to(model.device)
-
                 outputs = model(X_batch)
                 loss = criterion(outputs, y_batch)
                 running_val_loss += loss.item() * X_batch.size(0)
@@ -227,7 +202,6 @@ def train_model(model, train_loader, val_loader, epochs=EPOCHS, lr=LEARNING_RATE
               f"Train Loss: {epoch_train_loss:.6f} | Val Loss: {epoch_val_loss:.6f}")
 
     return train_losses, val_losses
-
 
 def plot_losses(train_losses, val_losses, save_path=SAVE_FIG_PATH):
     plt.figure(figsize=(8, 5))
@@ -243,9 +217,6 @@ def plot_losses(train_losses, val_losses, save_path=SAVE_FIG_PATH):
     print(f"Saved loss plot to {save_path}")
 
 def evaluate_dataset(model, loader):
-    """
-    Compute average MSE over the given loader.
-    """
     criterion = nn.MSELoss()
     model.eval()
     running_loss = 0.0
@@ -264,7 +235,10 @@ def main():
     H_list, Sigma_list = load_dataset(CSV_PATH)
 
     # 2) Split train/val
-    H_train, Sigma_train, H_val, Sigma_val = train_val_split(H_list, Sigma_list, val_ratio=VALIDATION_SPLIT, seed=SEED)
+    H_train, Sigma_train, H_val, Sigma_val = train_val_split(
+        H_list, Sigma_list,
+        val_ratio=VALIDATION_SPLIT, seed=SEED
+    )
 
     # 3) Build Dataset objects and DataLoaders
     train_ds = SigmaDataset(H_train, Sigma_train)
@@ -274,16 +248,14 @@ def main():
     val_loader = torch.utils.data.DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
 
     # 4) Build the model
-    # figure out the dimension
-    #   if H is m x n, then after flatten real + imag, 
-    #   dimension = 2*m*n
+    #   Let H be shape (m, n). Flatten -> m*n
+    #   Then we feed in a 1D real vector of size m*n as input.
+    #   Sigma is shape (n, n), flattened -> n*n
     sample_H = H_train[0]
     m, n = sample_H.shape
-    in_dim = 2 * m * n
-    # for Sigma which is n x n -> 2*n*n
-    out_dim = 2 * n * n
+    in_dim = m * n
+    out_dim = n * n
 
-    # We'll store the device reference in the model to simplify code
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = SigmaPredictor(in_dim, out_dim, hidden_dim=HIDDEN_DIM)
     model.device = device
@@ -291,7 +263,10 @@ def main():
 
     # 5) Train
     print(f"Starting training for {EPOCHS} epochs ...")
-    train_losses, val_losses = train_model(model, train_loader, val_loader, epochs=EPOCHS, lr=LEARNING_RATE)
+    train_losses, val_losses = train_model(
+        model, train_loader, val_loader,
+        epochs=EPOCHS, lr=LEARNING_RATE
+    )
 
     # 6) Plot training vs. validation performance
     plot_losses(train_losses, val_losses, SAVE_FIG_PATH)
@@ -302,7 +277,7 @@ def main():
     print(f"Final Train MSE: {train_mse:.6f}")
     print(f"Final Validation MSE: {val_mse:.6f}")
 
-    # 8) (Optional) Save the model
+    # 8) Save the model
     torch.save(model.state_dict(), "final_sigma_model.pt")
     print("Model weights saved to final_sigma_model.pt")
 
