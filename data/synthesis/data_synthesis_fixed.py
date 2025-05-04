@@ -1,9 +1,12 @@
+# This module synthesizes a dataset according to the Gaussian distribution of channel
+
 import os
 import sys
 import json
 import torch
 import pandas as pd
 import importlib
+
 # Get the current working directory
 scripts_dir = os.getcwd()
 # Go up two levels
@@ -13,6 +16,7 @@ sys.path.append(project_root)
 import src.beamforming
 importlib.reload(src.beamforming)
 from src.beamforming import wf_algorithm
+
 import src.utils
 importlib.reload(src.utils)
 from src.utils import calculate_rate

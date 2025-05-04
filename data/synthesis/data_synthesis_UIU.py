@@ -1,3 +1,5 @@
+# This module synthesizes a dataset according to the UIU structure of channel
+
 import os
 import sys
 import json
@@ -11,8 +13,6 @@ scripts_dir = os.getcwd()
 project_root = os.path.abspath(os.path.join(scripts_dir, '..', '..'))
 sys.path.append(project_root)
 
-# Import your custom modules
-# (Replace 'src.uiu' and 'src.uiu_algorithm' with the actual module names)
 import src.beamforming
 importlib.reload(src.beamforming)
 from src.beamforming import UIU_algorithm  # example import
