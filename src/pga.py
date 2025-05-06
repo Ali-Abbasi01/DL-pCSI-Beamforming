@@ -34,6 +34,55 @@ class fixed_channel_pga():
                 Sigma = proj_psd_trace(Sigma, self.PT)
 
         return Sigma
+    
+class Bnetwork_channel_pga():
+
+    def __init__(self, P, PT):
+        self.p = P
+        self.PT = PT
+        Br = self.p.calculate_Br()
+        Bt = self.p.calculate_Bt()
+        A = self.p.calculate_A()
+        H = Br @ A @ Bt.conj().T
+        self.Nr, self.Nt = H.shape
+        
+    def solve(self, num_iter=100000, num_sto=1000, lr=0.01):
+        def proj_psd_trace(S, P):
+            """Project Hermitian S onto {X ≽ 0,  tr(X) ≤ P}."""
+            # Hermitian eigendecomp
+            eigval, eigvec = torch.linalg.eigh(S)
+            eigval.clamp_(min=0)             # PSD
+            s = eigval.sum()
+            if s > P:                        # scale down uniformly
+                eigval *= P / s
+            return (eigvec * eigval) @ eigvec.conj().T
+
+        def obj_sg(Sigma):
+            loss = 0
+            for i in range(num_sto):
+                Br = self.p.calculate_Br()
+                Bt = self.p.calculate_Bt()
+                A = self.p.calculate_A()
+                H = Br @ A @ Bt.conj().T
+                M = I + H @ Sigma @ H.conj().T
+                loss += torch.logdet(M)
+            return loss/num_sto
+        
+        I = torch.eye(self.Nr, dtype=torch.cfloat)
+
+        Sigma = torch.eye(self.Nt, dtype=torch.cfloat, requires_grad=True)
+
+        for _ in range(num_iter): 
+            Sigma.requires_grad_(True)
+            loss = obj_sg(Sigma).real
+            loss.backward()
+            g = Sigma.grad
+
+            with torch.no_grad():
+                Sigma = Sigma + lr * g
+                Sigma = proj_psd_trace(Sigma, PT)
+
+        return Sigma
 
 class UIU_pga():
 
