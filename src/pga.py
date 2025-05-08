@@ -80,7 +80,7 @@ class Bnetwork_channel_pga():
 
             with torch.no_grad():
                 Sigma = Sigma + lr * g
-                Sigma = proj_psd_trace(Sigma, PT)
+                Sigma = proj_psd_trace(Sigma, self.PT)
 
         return Sigma
 
